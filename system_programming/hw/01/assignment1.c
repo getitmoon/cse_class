@@ -1,186 +1,113 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
 #include "assignment1.h"
-
-typedef struct one_byte
-{
-    char bits[8];
-} one_byte;
-
-int bits_to_char(char *str);
-int bits_to_uchar(char *str);
-
-void print_char(one_byte *byte);
-void print_ascii(one_byte *byte);
-void print_uchar(one_byte *byte);
-void print_int(one_byte *byte);
-void print_uint(one_byte *byte);
-void print_float(one_byte *byte);
-void print_double(one_byte *byte);
 
 int main(){
     FILE *fptr = fopen( "input.txt", "r");   
-    size_t size = sizeof(one_byte);
-    int byte_num = 0;
-    one_byte *byte;
+    FILE *fptr_w = fopen("output.txt", "w");
+    int chunk_num = 0;
+    // read file just before the end-of-file
     while (!feof(fptr)){
-        byte = (one_byte *) realloc(byte, ++byte_num * size + 1); //corrupted size vs. prev_size
-        fscanf(fptr, "%8s", (byte + byte_num - 1)->bits);
+        // dynamic allocation for 64 sequences
+        char *chunk = (char *)malloc(sizeof(char) * 64 + 1); 
+        // read 64 sequences of 0 and 1 each time
+        fscanf(fptr, "%64s", chunk); 
+        if (!feof(fptr)){ 
+            fprintf(fptr_w, "-------- Chunk %d --------\n", ++chunk_num);
+            fprintf(fptr_w, "Signed Char: ");
+            print_chunk(fptr_w, chunk, 1, 1); // Signed char: 1byte, signed
+            fprintf(fptr_w, "ASCII Codes: ");
+            print_chunk_ascii(fptr_w, chunk, 1); // ASCII: 1byte
+            fprintf(fptr_w, "Unsigned Char: ");
+            print_chunk(fptr_w, chunk, 1, 0); // Unsigned char: 1byte unsigned
+            fprintf(fptr_w, "Signed Int: ");
+            print_chunk(fptr_w, chunk, 4, 1); // Signed int: 4byte, signed
+            fprintf(fptr_w, "Unsigned Int: ");
+            print_chunk(fptr_w, chunk, 4, 0); // Unsigned int: 4byte, unsigned
+            fprintf(fptr_w, "Signed Float: ");
+            print_chunk_decimal(fptr_w, chunk, 4, 8, 127, 23); 
+            // Signed float: 4byte, 8bit and 127 for exponent part, 23bit for mantissa
+            fprintf(fptr_w, "Signed Double: ");
+            print_chunk_decimal(fptr_w, chunk, 8, 11, 1023, 52);
+            // Signed double: 8byte, 11bit and 1023 for exponent part, 52bit for mantissa
+        } 
+        // deallocate
+        free(chunk);
     }
+    fclose(fptr_w);
     fclose(fptr);
-    byte_num = byte_num - 1;
-    int chunk = byte_num / 8;
-
-    for (size_t i = 0; i < chunk; i++)
-    {
-        printf("-------- Chunk %ld --------\n", i + 1);
-        printf("Signed Char: ");
-        print_char(byte + 8 * i);
-        printf("ASCII Codes: ");
-        print_ascii(byte + 8 * i);
-        printf("Unsigned Int: ");
-        print_uchar(byte + 8 * i);
-        printf("Signed Int: ");
-        print_int(byte + 8 * i);
-        printf("Unsigned Int: ");
-        print_uint(byte + 8 * i);
-        printf("Signed Float: ");
-        print_float(byte + 8 * i);
-        printf("Signed Double: ");
-        print_double(byte + 8 * i);
-    }
-    free(byte);
     return 0;
 }
 
-int bits_to_char(char *str)
-{
-    int data = 0;
-    if (*str == '1')
-        data += -(1 << 7);
-    for (size_t i = 1; i < 8; i++)
-    {
-        if (*(str + i) == '1')
-            data += (1 << (7-i));
-    }    
-    return data; 
+
+
+long long from_big_endian(char *chunk, int bit_num, int if_sign){
+    /* from_big_endian() transforms binary digits to desired type number
+    chunk is a pointer to char value '0' or '1'
+    bit_num is a number of digits in binary
+    if_sign is whether the type of transformed type is signed or not */
+    long long result = 0;
+    if (*chunk++ == '1')
+        result += pow(2, --bit_num) * ((if_sign)? -1 : 1);
+    else --bit_num;
+    while (--bit_num >= 0)
+        if (*chunk++ == '1') result += pow(2, bit_num);
+    return result;
 }
 
-int bits_to_uchar(char * str)
-{
-    int data = 0;
-    for (size_t i = 0; i < 8; i++)
-    {
-        if (*(str + i) == '1')
-            data += (1 << (7-i));
+void print_chunk(FILE *file, char *chunk, int byte_num, int if_sign){
+    /* print_chunk writes the result of from_big_endian for every chunk to given file
+    file is a pointer to a file to be written on
+    byte_num is size in byte of desired type*/
+    int num = CHUNK_BYTE / byte_num; // There are (num) of target in every chunk
+    for (int i = 0; i < num; i++){
+        fprintf(file, "%lld ", from_big_endian(chunk, byte_num*8, if_sign));
+        chunk += 8*byte_num;
     }
-    return data;
+    fprintf(file, "\n");
 }
 
-void print_char(one_byte *byte)
-{
-    for (size_t i = 0; i < 8; i++){
-        printf("%d ", bits_to_char((byte + i) -> bits));
+void print_chunk_ascii(FILE *file, char * chunk, int byte_num){
+    /* print_chunk_ascii writes the result of from_big_endian, 
+    in ascii, for every chunk to given file */
+    int num = CHUNK_BYTE / byte_num;
+    int val;
+    for (int i = 0; i < num; i++){
+        val = from_big_endian(chunk, byte_num * 8, 0);
+        if (val > 126 || val < 32) fprintf(file, ". ");
+        // only consider value between 32 and 126 as ascii 
+        else fprintf(file, "%c ", (char) val);
+        chunk += 8*byte_num;
     }
-    printf("\n");
-}           
-
-void print_ascii(one_byte *byte)
-{
-    for (size_t i = 0; i < 8; i++){
-        if (bits_to_uchar((byte + i) -> bits) > 127)
-            printf(". ");
-        else printf("%c ", (char) bits_to_uchar((byte + i) -> bits));
-    }       
-    printf("\n");
+    fprintf(file, "\n");
 }
 
-void print_uchar(one_byte *byte)
-{
-    for (size_t i = 0; i < 8; i++){
-        printf("%d ", bits_to_uchar((byte + i) -> bits));
+double to_mantissa(char * chunk, int bit_num){
+    /* to_mantissa transforms binary digits to mantissa
+    bit_num is number of digits*/
+    double result = 0;
+    for (int i = 1; i <= bit_num; i++){
+        if (*chunk++ == '1') result += 1/pow(2, i);
     }
-    printf("\n");
+    return result;
 }
 
-void print_int(one_byte *byte)
-{   
-    int result;
-    for (size_t i = 0; i < 2; i++){
-        result = 0;
-        for (size_t j = 0; j < 3; j++){
-            result += bits_to_uchar((byte + 4 * i + (3-j)) -> bits) << (8 * j);
-        }
-        result += bits_to_char((byte + 4 * i) -> bits) << 24;
-        printf("%d ", result);
-    }
-    printf("\n");
-}
-
-void print_uint(one_byte *byte)
-{
-    int result;
-    for (size_t i = 0; i < 2; i++){
-        result = 0;
-        for (size_t j = 0; j < 4; j++){
-            result += bits_to_uchar((byte + 4 * i + (3-j)) -> bits) << (8 * j);
-        }
-        printf("%u ", result);
-    }
-    printf("\n");
-}
-
-void print_float(one_byte *byte)
-{   
-    float result;
-    int i, j;
-    for (i = 0; i < 2; i++){
+void print_chunk_decimal(FILE *file, char *chunk, int byte_num, int exp_bit, int E, int man_bit){
+    /* print_chunk_decimal transforms binary digits to double and write it to given file */
+    double result;
+    int num = CHUNK_BYTE / byte_num;
+    for (int i = 0; i < num; i++){
         int sign = 1;
-        if (((byte + 4 * i) -> bits)[0] == '1') sign = -1;
+        if (*chunk++ == '1') sign = -1;
 
-        int exponential_bit = 0;
-        for (j = 0; j < 8; j++){
-            if (((byte + 4 * i) -> bits)[8-j] == '1')
-                exponential_bit += 1 << j;
-        }
-        float exponent = pow(2, (exponential_bit - 127));
+        int exponential_bit = (int) from_big_endian(chunk, exp_bit, 0);
+        double exponent = pow(2, (exponential_bit - E));
+        chunk += exp_bit;
 
-        float mantissa_bit = 0;
-        for (j = 0; j < 23; j++){
-            if (((byte + 4 * i) -> bits)[9+j] == '1')
-                mantissa_bit += 1/pow(2, (j+1));
-        }
-        float mantissa = 1 + mantissa_bit;
+        double mantissa = 1 + (double) to_mantissa(chunk, man_bit);
+        chunk += man_bit;
     
         result = sign * mantissa * exponent;
-        printf("%.4f ", result);
+        fprintf(file, "%.4lf ", result);
     }
-    printf("\n");
-}
-
-void print_double(one_byte *byte)
-{
-    double result;
-    int i;
-    int sign = 1;
-    if ((byte -> bits)[0] == '1') sign = -1;
-
-    int exponential_bit = 0;
-    for (i = 0; i < 11; i++){
-        if ((byte -> bits)[11-i] == '1')
-            exponential_bit += 1 << i;
-    }
-    double exponent = pow(2, (exponential_bit - 1023));
-
-    double mantissa_bit = 0;
-    for (i = 0; i < 52; i++){
-        if ((byte -> bits)[12+i] == '1')
-            mantissa_bit +=  1/pow(2, (i+1));
-    }
-    double mantissa = 1 + mantissa_bit;
-    
-    result = sign * mantissa * exponent;
-    printf("%.4e\n", result);
+    fprintf(file, "\n");
 }
 
